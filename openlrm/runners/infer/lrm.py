@@ -19,11 +19,13 @@ import argparse
 import mcubes
 import trimesh
 import numpy as np
+
+from torch import nn
 from PIL import Image
 from omegaconf import OmegaConf
 from tqdm.auto import tqdm
 from accelerate.logging import get_logger
-
+from accelerate import Accelerator
 from .base_inferrer import Inferrer
 from openlrm.datasets.cam_utils import build_camera_principle, build_camera_standard, surrounding_views_linspace, create_intrinsics
 from openlrm.utils.logging import configure_logger
@@ -35,84 +37,24 @@ from openlrm.utils.hf_hub import wrap_model_hub
 logger = get_logger(__name__)
 
 
-def parse_configs():
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str)
-    parser.add_argument('--infer', type=str)
-    args, unknown = parser.parse_known_args()
-
-    cfg = OmegaConf.create()
-    cli_cfg = OmegaConf.from_cli(unknown)
-
-    # parse from ENV
-    if os.environ.get('APP_INFER') is not None:
-        args.infer = os.environ.get('APP_INFER')
-    if os.environ.get('APP_MODEL_NAME') is not None:
-        cli_cfg.model_name = os.environ.get('APP_MODEL_NAME')
-
-    if args.config is not None:
-        cfg_train = OmegaConf.load(args.config)
-        cfg.source_size = cfg_train.dataset.source_image_res
-        cfg.render_size = cfg_train.dataset.render_image.high
-        _relative_path = os.path.join(cfg_train.experiment.parent, cfg_train.experiment.child, os.path.basename(cli_cfg.model_name).split('_')[-1])
-        cfg.video_dump = os.path.join("exps", 'videos', _relative_path)
-        cfg.mesh_dump = os.path.join("exps", 'meshes', _relative_path)
-
-    if args.infer is not None:
-        cfg_infer = OmegaConf.load(args.infer)
-        cfg.merge_with(cfg_infer)
-        cfg.setdefault('video_dump', os.path.join("dumps", cli_cfg.model_name, 'videos'))
-        cfg.setdefault('mesh_dump', os.path.join("dumps", cli_cfg.model_name, 'meshes'))
-
-    cfg.merge_with(cli_cfg)
-
-    """
-    [required]
-    model_name: str
-    image_input: str
-    export_video: bool
-    export_mesh: bool
-
-    [special]
-    source_size: int
-    render_size: int
-    video_dump: str
-    mesh_dump: str
-
-    [default]
-    render_views: int
-    render_fps: int
-    mesh_size: int
-    mesh_thres: float
-    frame_size: int
-    logger: str
-    """
-
-    cfg.setdefault('logger', 'INFO')
-
-    # assert not (args.config is not None and args.infer is not None), "Only one of config and infer should be provided"
-    assert cfg.model_name is not None, "model_name is required"
-    if not os.environ.get('APP_ENABLED', None):
-        assert cfg.image_input is not None, "image_input is required"
-        assert cfg.export_video or cfg.export_mesh, \
-            "At least one of export_video or export_mesh should be True"
-        cfg.app_enabled = False
-    else:
-        cfg.app_enabled = True
-
-    return cfg
 
 
-@REGISTRY_RUNNERS.register('infer.lrm')
-class LRMInferrer(Inferrer):
+# @REGISTRY_RUNNERS.register('infer.lrm')
+class LRMInferrer(nn.Module, Inferrer):
 
     EXP_TYPE: str = 'lrm'
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, cfg=None):
+        # For some reason, mro doesn't work here:
+        # Says accelerator not initialized, when it is in Inferrer
+        nn.Module.__init__(self)
+        Inferrer.__init__(self)
 
-        self.cfg = parse_configs()
+        if cfg is None:
+            cfg = parse_configs()
+
+        self.cfg = cfg
+
         configure_logger(
             stream_level=self.cfg.logger,
             log_level=self.cfg.logger,
@@ -210,10 +152,13 @@ class LRMInferrer(Inferrer):
         mesh = trimesh.Trimesh(vertices=vtx, faces=faces, vertex_colors=vtx_colors)
 
         # dump
-        os.makedirs(os.path.dirname(dump_mesh_path), exist_ok=True)
-        mesh.export(dump_mesh_path)
+        if dump_mesh_path is not None:
+            os.makedirs(os.path.dirname(dump_mesh_path), exist_ok=True)
+            mesh.export(dump_mesh_path)
 
-    def infer_single(self, image_path: str, source_cam_dist: float, export_video: bool, export_mesh: bool, dump_video_path: str, dump_mesh_path: str):
+        return mesh
+
+    def infer_single(self, image: torch.Tensor, source_cam_dist: float, export_video: bool, export_mesh: bool, dump_video_path: str, dump_mesh_path: str):
         source_size = self.cfg.source_size
         render_size = self.cfg.render_size
         render_views = self.cfg.render_views
@@ -224,7 +169,6 @@ class LRMInferrer(Inferrer):
         source_cam_dist = self.cfg.source_cam_dist if source_cam_dist is None else source_cam_dist
 
         # prepare image: [1, C_img, H_img, W_img], 0-1 scale
-        image = torch.from_numpy(np.array(Image.open(image_path))).to(self.device)
         image = image.permute(2, 0, 1).unsqueeze(0) / 255.0
         if image.shape[1] == 4:  # RGBA
             image = image[:, :3, ...] * image[:, 3:, ...] + (1 - image[:, 3:, ...])
@@ -245,6 +189,8 @@ class LRMInferrer(Inferrer):
                 results.update({
                     'mesh': mesh,
                 })
+
+        return results
 
     def infer(self):
 
@@ -281,11 +227,82 @@ class LRMInferrer(Inferrer):
                 f'{uid}.ply',
             )
 
-            self.infer_single(
-                image_path,
+            image = torch.from_numpy(np.array(Image.open(image_path))).to(self.device)
+            results = self.infer_single(
+                image,
                 source_cam_dist=None,
                 export_video=self.cfg.export_video,
                 export_mesh=self.cfg.export_mesh,
                 dump_video_path=dump_video_path,
                 dump_mesh_path=dump_mesh_path,
             )
+
+
+
+def parse_configs():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str)
+    parser.add_argument('--infer', type=str)
+    args, unknown = parser.parse_known_args()
+
+    cfg = OmegaConf.create()
+    cli_cfg = OmegaConf.from_cli(unknown)
+
+    # parse from ENV
+    if os.environ.get('APP_INFER') is not None:
+        args.infer = os.environ.get('APP_INFER')
+    if os.environ.get('APP_MODEL_NAME') is not None:
+        cli_cfg.model_name = os.environ.get('APP_MODEL_NAME')
+
+    if args.config is not None:
+        cfg_train = OmegaConf.load(args.config)
+        cfg.source_size = cfg_train.dataset.source_image_res
+        cfg.render_size = cfg_train.dataset.render_image.high
+        _relative_path = os.path.join(cfg_train.experiment.parent, cfg_train.experiment.child, os.path.basename(cli_cfg.model_name).split('_')[-1])
+        cfg.video_dump = os.path.join("exps", 'videos', _relative_path)
+        cfg.mesh_dump = os.path.join("exps", 'meshes', _relative_path)
+
+    if args.infer is not None:
+        cfg_infer = OmegaConf.load(args.infer)
+        cfg.merge_with(cfg_infer)
+        cfg.setdefault('video_dump', os.path.join("dumps", cli_cfg.model_name, 'videos'))
+        cfg.setdefault('mesh_dump', os.path.join("dumps", cli_cfg.model_name, 'meshes'))
+
+    cfg.merge_with(cli_cfg)
+
+    """
+    [required]
+    model_name: str
+    image_input: str
+    export_video: bool
+    export_mesh: bool
+
+    [special]
+    source_size: int
+    render_size: int
+    video_dump: str
+    mesh_dump: str
+
+    [default]
+    render_views: int
+    render_fps: int
+    mesh_size: int
+    mesh_thres: float
+    frame_size: int
+    logger: str
+    """
+
+    cfg.setdefault('logger', 'INFO')
+
+    # assert not (args.config is not None and args.infer is not None), "Only one of config and infer should be provided"
+    assert cfg.model_name is not None, "model_name is required"
+    if not os.environ.get('APP_ENABLED', None):
+        assert cfg.image_input is not None, "image_input is required"
+        assert cfg.export_video or cfg.export_mesh, \
+            "At least one of export_video or export_mesh should be True"
+        cfg.app_enabled = False
+    else:
+        cfg.app_enabled = True
+
+    return cfg

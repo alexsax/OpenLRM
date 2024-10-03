@@ -26,7 +26,7 @@ class OSGDecoder(nn.Module):
     """
     Triplane decoder that gives RGB and sigma values from sampled features.
     Using ReLU here instead of Softplus in the original implementation.
-    
+   
     Reference:
     EG3D: https://github.com/NVlabs/eg3d/blob/main/eg3d/training/triplane.py#L112
     """
@@ -170,7 +170,6 @@ class TriplaneSynthesizer(nn.Module):
                 indexing='ij',
             ), dim=-1).reshape(-1, 3))
         cube_grid = torch.stack(grid_points, dim=0).to(planes.device)
-
         features = self.forward_points(planes, cube_grid)
 
         # reshape into grid
@@ -189,9 +188,15 @@ class TriplaneSynthesizer(nn.Module):
         outs = []
         for i in range(0, points.shape[1], chunk_size):
             chunk_points = points[:, i:i+chunk_size]
-
             # query triplane
-            chunk_out = self.renderer.run_model_activated(
+            # chunk_out = self.renderer.run_model_activated(
+            #     planes=planes,
+            #     decoder=self.decoder,
+            #     sample_coordinates=chunk_points,
+            #     sample_directions=torch.zeros_like(chunk_points),
+            #     options=self.rendering_kwargs,
+            # )
+            chunk_out = self.renderer.run_model(
                 planes=planes,
                 decoder=self.decoder,
                 sample_coordinates=chunk_points,

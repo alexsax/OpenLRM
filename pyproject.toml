@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openlrm"
+version = "0.1.0"
+description = "OpenLRM: Open-Source Large Reconstruction Models"
+readme = "README.md"
+authors = [
+    {name = "Zexin He"},
+    {name = "Tengfei Wang"}
+]
+license = {text = "Apache License 2.0"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.7"
+dynamic = ["dependencies"]
+
+[project.urls]
+Homepage = "https://github.com/3DTopia/OpenLRM"
+
+[tool.setuptools]
+packages = {find = {exclude = ["configs", "tools", "demo", "tests", "scripts"]}}
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

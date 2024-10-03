@@ -33,3 +33,7 @@ class Registry:
 
     def __contains__(self, name):
         return name in self._registry
+
+    def remove(self, name):
+        """Remove a module"""
+        del self._registry[name]

@@ -30,7 +30,12 @@ class Preprocessor:
         )
 
     def preprocess(self, image_path: str, save_path: str, rmbg: bool = True, recenter: bool = True, size: int = 512, border_ratio: float = 0.2):
-        image = self.step_load_to_size(image_path=image_path, size=size*2)
+        image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        processed_image = self.preprocess_cv(image, rmbg=rmbg, recenter=recenter, size=size, border_ratio=border_ratio)
+        return cv2.imwrite(save_path, processed_image)
+
+    def preprocess_cv(self, image: np.ndarray, rmbg: bool = True, recenter: bool = True, size: int = 512, border_ratio: float = 0.2) -> np.ndarray:
+        image = self.step_resize_longest_side(image=image, size=size*2)
         if rmbg:
             image = self.step_rembg(image_in=image)
         else:
@@ -43,7 +48,19 @@ class Preprocessor:
                 dsize=(size, size),
                 interpolation=cv2.INTER_AREA,
             )
-        return cv2.imwrite(save_path, image)
+        return image
+
+    def step_resize_longest_side(self, image: np.ndarray, size: int) -> np.ndarray:
+        # This makes the longest side equal to 'size'
+        height, width = image.shape[:2]
+        scale = size / max(height, width)
+        height, width = int(height * scale), int(width * scale)
+        image_out = cv2.resize(
+            src=image,
+            dsize=(width, height),
+            interpolation=cv2.INTER_AREA,
+        )
+        return image_out
 
     def step_rembg(self, image_in: np.ndarray) -> np.ndarray:
         image_out = rembg.remove(
@@ -75,14 +92,3 @@ class Preprocessor:
         )
         return image_out
 
-    def step_load_to_size(self, image_path: str, size: int) -> np.ndarray:
-        image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-        height, width = image.shape[:2]
-        scale = size / max(height, width)
-        height, width = int(height * scale), int(width * scale)
-        image_out = cv2.resize(
-            src=image,
-            dsize=(width, height),
-            interpolation=cv2.INTER_AREA,
-        )
-        return image_out

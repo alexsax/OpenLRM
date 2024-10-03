@@ -35,7 +35,6 @@ class ModelLRM(nn.Module):
                  encoder_freeze: bool = True, encoder_type: str = 'dino',
                  encoder_model_name: str = 'facebook/dino-vitb16', encoder_feat_dim: int = 768):
         super().__init__()
-        
         # attributes
         self.encoder_feat_dim = encoder_feat_dim
         self.camera_embed_dim = camera_embed_dim
