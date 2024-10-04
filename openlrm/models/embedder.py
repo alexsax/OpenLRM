@@ -32,6 +32,6 @@ class CameraEmbedder(nn.Module):
             nn.Linear(embed_dim, embed_dim),
         )
 
-    @torch.compile
+    # @torch.compile
     def forward(self, x):
         return self.mlp(x)

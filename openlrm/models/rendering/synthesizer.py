@@ -47,7 +47,7 @@ class OSGDecoder(nn.Module):
             if isinstance(m, nn.Linear):
                 nn.init.zeros_(m.bias)
 
-    @torch.compile
+    # @torch.compile
     def forward(self, sampled_features, ray_directions):
         # Aggregate features by mean
         # sampled_features = sampled_features.mean(1)

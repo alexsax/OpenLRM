@@ -24,7 +24,7 @@ class RaySampler(torch.nn.Module):
         super().__init__()
         self.ray_origins_h, self.ray_directions, self.depths, self.image_coords, self.rendering_options = None, None, None, None, None
 
-    @torch.compile
+    # @torch.compile
     def forward(self, cam2world_matrix, intrinsics, resolutions, anchors, region_size):
         """
         Create batches of rays and return origins and directions.

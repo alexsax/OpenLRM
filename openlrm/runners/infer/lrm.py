@@ -26,6 +26,7 @@ from omegaconf import OmegaConf
 from tqdm.auto import tqdm
 from accelerate.logging import get_logger
 from accelerate import Accelerator
+from transformers import AutoConfig
 from .base_inferrer import Inferrer
 from openlrm.datasets.cam_utils import build_camera_principle, build_camera_standard, surrounding_views_linspace, create_intrinsics
 from openlrm.utils.logging import configure_logger
@@ -48,7 +49,7 @@ class LRMInferrer(nn.Module, Inferrer):
         # For some reason, mro doesn't work here:
         # Says accelerator not initialized, when it is in Inferrer
         nn.Module.__init__(self)
-        Inferrer.__init__(self)
+        # Inferrer.__init__(self)
 
         if cfg is None:
             cfg = parse_configs()
@@ -60,12 +61,12 @@ class LRMInferrer(nn.Module, Inferrer):
             log_level=self.cfg.logger,
         )
 
-        self.model = self._build_model(self.cfg).to(self.device)
+        self.model = self._build_model(self.cfg)
 
     def _build_model(self, cfg):
         from openlrm.models import model_dict
         hf_model_cls = wrap_model_hub(model_dict[self.EXP_TYPE])
-        model = hf_model_cls.from_pretrained(cfg.model_name)
+        model = hf_model_cls.from_pretrained(cfg.model_name, encoder_drop_path_rate=cfg.encoder_drop_path_rate)
         return model
 
     def _default_source_camera(self, dist_to_center: float = 2.0, batch_size: int = 1, device: torch.device = torch.device('cpu')):
@@ -96,17 +97,18 @@ class LRMInferrer(nn.Module, Inferrer):
 
     def infer_planes(self, image: torch.Tensor, source_cam_dist: float):
         N = image.shape[0]
-        source_camera = self._default_source_camera(dist_to_center=source_cam_dist, batch_size=N, device=self.device)
+        device = image.device
+        source_camera = self._default_source_camera(dist_to_center=source_cam_dist, batch_size=N, device=device)
         planes = self.model.forward_planes(image, source_camera)
         assert N == planes.shape[0]
         return planes
 
     def infer_video(self, planes: torch.Tensor, frame_size: int, render_size: int, render_views: int, render_fps: int, dump_video_path: str):
         N = planes.shape[0]
-        render_cameras = self._default_render_cameras(n_views=render_views, batch_size=N, device=self.device)
-        render_anchors = torch.zeros(N, render_cameras.shape[1], 2, device=self.device)
-        render_resolutions = torch.ones(N, render_cameras.shape[1], 1, device=self.device) * render_size
-        render_bg_colors = torch.ones(N, render_cameras.shape[1], 1, device=self.device, dtype=torch.float32) * 1.
+        render_cameras = self._default_render_cameras(n_views=render_views, batch_size=N, device=device)
+        render_anchors = torch.zeros(N, render_cameras.shape[1], 2, device=device)
+        render_resolutions = torch.ones(N, render_cameras.shape[1], 1, device=device) * render_size
+        render_bg_colors = torch.ones(N, render_cameras.shape[1], 1, device=device, dtype=torch.float32) * 1.
 
         frames = []
         for i in range(0, render_cameras.shape[1], frame_size):
@@ -137,6 +139,7 @@ class LRMInferrer(nn.Module, Inferrer):
                 )
 
     def infer_mesh(self, planes: torch.Tensor, mesh_size: int, mesh_thres: float, dump_mesh_path: str):
+        device = planes.device
         grid_out = self.model.synthesizer.forward_grid(
             planes=planes,
             grid_size=mesh_size,
@@ -145,7 +148,7 @@ class LRMInferrer(nn.Module, Inferrer):
         vtx, faces = mcubes.marching_cubes(grid_out['sigma'].squeeze(0).squeeze(-1).cpu().numpy(), mesh_thres)
         vtx = vtx / (mesh_size - 1) * 2 - 1
 
-        vtx_tensor = torch.tensor(vtx, dtype=torch.float32, device=self.device).unsqueeze(0)
+        vtx_tensor = torch.tensor(vtx, dtype=torch.float32, device=device).unsqueeze(0)
         vtx_colors = self.model.synthesizer.forward_points(planes, vtx_tensor)['rgb'].squeeze(0).cpu().numpy()  # (0, 1)
         vtx_colors = (vtx_colors * 255).astype(np.uint8)
         
@@ -193,7 +196,7 @@ class LRMInferrer(nn.Module, Inferrer):
         return results
 
     def infer(self):
-
+        raise NotImplementedError("Not implemented: removed HF accelerate")
         image_paths = []
         if os.path.isfile(self.cfg.image_input):
             omit_prefix = os.path.dirname(self.cfg.image_input)

@@ -29,12 +29,24 @@ class ModelLRM(nn.Module):
     """
     Full model of the basic single-view large reconstruction model.
     """
-    def __init__(self, camera_embed_dim: int, rendering_samples_per_ray: int,
-                 transformer_dim: int, transformer_layers: int, transformer_heads: int,
-                 triplane_low_res: int, triplane_high_res: int, triplane_dim: int,
-                 encoder_freeze: bool = True, encoder_type: str = 'dino',
-                 encoder_model_name: str = 'facebook/dino-vitb16', encoder_feat_dim: int = 768):
+    def __init__(self,
+            camera_embed_dim: int,
+            rendering_samples_per_ray: int,
+            transformer_dim: int,
+            transformer_layers: int,
+            transformer_heads: int,
+            triplane_low_res: int,
+            triplane_high_res: int,
+            triplane_dim: int,
+            encoder_freeze: bool = True,
+            encoder_type: str = 'dino',
+            encoder_model_name: str = 'facebook/dino-vitb16',
+            encoder_feat_dim: int = 768,
+            encoder_drop_path_rate: float = 0.
+        ):
         super().__init__()
+        print(f"{__file__} {__class__.__name__} drop_path_rate: {encoder_drop_path_rate}")
+
         # attributes
         self.encoder_feat_dim = encoder_feat_dim
         self.camera_embed_dim = camera_embed_dim
@@ -46,6 +58,7 @@ class ModelLRM(nn.Module):
         self.encoder = self._encoder_fn(encoder_type)(
             model_name=encoder_model_name,
             freeze=encoder_freeze,
+            drop_path_rate=encoder_drop_path_rate,
         )
         self.camera_embedder = CameraEmbedder(
             raw_dim=12+4, embed_dim=camera_embed_dim,
@@ -68,11 +81,11 @@ class ModelLRM(nn.Module):
         assert encoder_type in ['dino', 'dinov2'], "Unsupported encoder type"
         if encoder_type == 'dino':
             from .encoders.dino_wrapper import DinoWrapper
-            logger.info("Using DINO as the encoder")
+            logger.info("Using DINO as {__class__.__name__} encoder")
             return DinoWrapper
         elif encoder_type == 'dinov2':
             from .encoders.dinov2_wrapper import Dinov2Wrapper
-            logger.info("Using DINOv2 as the encoder")
+            logger.info(f"Using DINOv2 as {__class__.__name__} encoder")
             return Dinov2Wrapper
 
     def forward_transformer(self, image_feats, camera_embeddings):
@@ -99,7 +112,7 @@ class ModelLRM(nn.Module):
         x = x.contiguous()
         return x
 
-    @torch.compile
+    # @torch.compile
     def forward_planes(self, image, camera):
         # image: [N, C_img, H_img, W_img]
         # camera: [N, D_cam_raw]

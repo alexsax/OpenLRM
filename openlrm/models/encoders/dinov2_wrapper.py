@@ -25,10 +25,10 @@ class Dinov2Wrapper(nn.Module):
     """
     Dino v2 wrapper using original implementation, hacked with modulation.
     """
-    def __init__(self, model_name: str, modulation_dim: int = None, freeze: bool = True):
+    def __init__(self, model_name: str, modulation_dim: int = None, freeze: bool = True, drop_path_rate: float = 0.):
         super().__init__()
         self.modulation_dim = modulation_dim
-        self.model = self._build_dinov2(model_name, modulation_dim=modulation_dim)
+        self.model = self._build_dinov2(model_name, modulation_dim=modulation_dim, drop_path_rate=drop_path_rate)
         if freeze:
             if modulation_dim is not None:
                 raise ValueError("Modulated Dinov2 requires training, freezing is not allowed.")
@@ -41,15 +41,15 @@ class Dinov2Wrapper(nn.Module):
             param.requires_grad = False
 
     @staticmethod
-    def _build_dinov2(model_name: str, modulation_dim: int = None, pretrained: bool = True):
+    def _build_dinov2(model_name: str, modulation_dim: int = None, pretrained: bool = True, drop_path_rate: float = 0.):
         from importlib import import_module
         dinov2_hub = import_module(".dinov2.hub.backbones", package=__package__)
         model_fn = getattr(dinov2_hub, model_name)
         logger.debug(f"Modulation dim for Dinov2 is {modulation_dim}.")
-        model = model_fn(modulation_dim=modulation_dim, pretrained=pretrained)
+        model = model_fn(modulation_dim=modulation_dim, pretrained=pretrained, drop_path_rate=drop_path_rate)
         return model
 
-    @torch.compile
+    # @torch.compile
     def forward(self, image: torch.Tensor, mod: torch.Tensor = None):
         # image: [N, C, H, W]
         # mod: [N, D] or None
