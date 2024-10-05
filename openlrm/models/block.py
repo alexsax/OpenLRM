@@ -14,6 +14,7 @@
 
 
 import torch.nn as nn
+from timm.models.vision_transformer import DropPath
 
 from .modulate import ModLN
 
@@ -94,7 +95,7 @@ class ConditionModulationBlock(nn.Module):
     # Block contains a cross-attention layer, a self-attention layer, and an MLP
     def __init__(self, inner_dim: int, cond_dim: int, mod_dim: int, num_heads: int, eps: float,
                  attn_drop: float = 0., attn_bias: bool = False,
-                 mlp_ratio: float = 4., mlp_drop: float = 0.):
+                 mlp_ratio: float = 4., mlp_drop: float = 0., drop_path_rate: float = 0.):
         super().__init__()
         self.norm1 = ModLN(inner_dim, mod_dim, eps)
         self.cross_attn = nn.MultiheadAttention(
@@ -112,13 +113,23 @@ class ConditionModulationBlock(nn.Module):
             nn.Linear(int(inner_dim * mlp_ratio), inner_dim),
             nn.Dropout(mlp_drop),
         )
+        self.drop_path_rate = drop_path_rate
+        self.drop_path1 = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
+        self.drop_path2 = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
+        self.drop_path3 = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
 
     def forward(self, x, cond, mod):
         # x: [N, L, D]
         # cond: [N, L_cond, D_cond]
         # mod: [N, D_mod]
-        x = x + self.cross_attn(self.norm1(x, mod), cond, cond, need_weights=False)[0]
-        before_sa = self.norm2(x, mod)
-        x = x + self.self_attn(before_sa, before_sa, before_sa, need_weights=False)[0]
-        x = x + self.mlp(self.norm3(x, mod))
+        if self.training and self.drop_path_rate > 0.0:
+            x = x + self.drop_path1(self.cross_attn(self.norm1(x, mod), cond, cond, need_weights=False)[0])
+            before_sa = self.norm2(x, mod)
+            x = x + self.drop_path2(self.self_attn(before_sa, before_sa, before_sa, need_weights=False)[0])
+            x = x + self.drop_path3(self.mlp(self.norm3(x, mod)))
+        else:
+            x = x + self.cross_attn(self.norm1(x, mod), cond, cond, need_weights=False)[0]
+            before_sa = self.norm2(x, mod)
+            x = x + self.self_attn(before_sa, before_sa, before_sa, need_weights=False)[0]
+            x = x + self.mlp(self.norm3(x, mod))
         return x

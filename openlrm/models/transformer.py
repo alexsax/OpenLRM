@@ -28,20 +28,28 @@ class TransformerDecoder(nn.Module):
     Transformer blocks that process the input and optionally use condition and modulation.
     """
 
-    def __init__(self, block_type: str,
-                 num_layers: int, num_heads: int,
-                 inner_dim: int, cond_dim: int = None, mod_dim: int = None,
-                 eps: float = 1e-6):
+    def __init__(self,
+            block_type: str,
+            num_layers: int,
+            num_heads: int,
+            inner_dim: int,
+            cond_dim: int = None,
+            mod_dim: int = None,
+            eps: float = 1e-6,
+            drop_path_rate: float = 0.
+        ):
         super().__init__()
         self.block_type = block_type
+
         self.layers = nn.ModuleList([
-            self._block_fn(inner_dim, cond_dim, mod_dim)(
+            self._block_fn(inner_dim, cond_dim, mod_dim, drop_path_rate)(
                 num_heads=num_heads,
                 eps=eps,
             )
             for _ in range(num_layers)
         ])
         self.norm = nn.LayerNorm(inner_dim, eps=eps)
+        self.drop_path_rate = drop_path_rate
 
     @property
     def block_type(self):
@@ -51,10 +59,15 @@ class TransformerDecoder(nn.Module):
     def block_type(self, block_type):
         assert block_type in ['basic', 'cond', 'mod', 'cond_mod'], \
             f"Unsupported block type: {block_type}"
+
         self._block_type = block_type
 
-    def _block_fn(self, inner_dim, cond_dim, mod_dim):
+    def _block_fn(self, inner_dim, cond_dim, mod_dim, drop_path_rate):
         assert inner_dim is not None, f"inner_dim must always be specified"
+                
+        if drop_path_rate > 0 and self.block_type != 'cond_mod':
+            logger.warning(f"drop_path_rate is only supported for ConditionModulationBlock")
+        
         if self.block_type == 'basic':
             assert cond_dim is None and mod_dim is None, \
                 f"Condition and modulation are not supported for BasicBlock"
@@ -75,7 +88,7 @@ class TransformerDecoder(nn.Module):
                 f"Condition and modulation dimensions must be specified for ConditionModulationBlock"
             from .block import ConditionModulationBlock
             logger.debug(f"Using ConditionModulationBlock")
-            return partial(ConditionModulationBlock, inner_dim=inner_dim, cond_dim=cond_dim, mod_dim=mod_dim)
+            return partial(ConditionModulationBlock, inner_dim=inner_dim, cond_dim=cond_dim, mod_dim=mod_dim, drop_path_rate=drop_path_rate)
         else:
             raise ValueError(f"Unsupported block type during runtime: {self.block_type}")
 

@@ -66,7 +66,11 @@ class LRMInferrer(nn.Module, Inferrer):
     def _build_model(self, cfg):
         from openlrm.models import model_dict
         hf_model_cls = wrap_model_hub(model_dict[self.EXP_TYPE])
-        model = hf_model_cls.from_pretrained(cfg.model_name, encoder_drop_path_rate=cfg.encoder_drop_path_rate)
+        model = hf_model_cls.from_pretrained(
+            cfg.model_name,
+            encoder_drop_path_rate=cfg.encoder_drop_path_rate,
+            decoder_drop_path_rate=cfg.decoder_drop_path_rate,
+        )
         return model
 
     def _default_source_camera(self, dist_to_center: float = 2.0, batch_size: int = 1, device: torch.device = torch.device('cpu')):

@@ -42,10 +42,10 @@ class ModelLRM(nn.Module):
             encoder_type: str = 'dino',
             encoder_model_name: str = 'facebook/dino-vitb16',
             encoder_feat_dim: int = 768,
-            encoder_drop_path_rate: float = 0.
+            encoder_drop_path_rate: float = 0.,
+            decoder_drop_path_rate: float = 0.,
         ):
         super().__init__()
-        print(f"{__file__} {__class__.__name__} drop_path_rate: {encoder_drop_path_rate}")
 
         # attributes
         self.encoder_feat_dim = encoder_feat_dim
@@ -67,8 +67,12 @@ class ModelLRM(nn.Module):
         self.pos_embed = nn.Parameter(torch.randn(1, 3*triplane_low_res**2, transformer_dim) * (1. / transformer_dim) ** 0.5)
         self.transformer = TransformerDecoder(
             block_type='cond_mod',
-            num_layers=transformer_layers, num_heads=transformer_heads,
-            inner_dim=transformer_dim, cond_dim=encoder_feat_dim, mod_dim=camera_embed_dim,
+            num_layers=transformer_layers,
+            num_heads=transformer_heads,
+            inner_dim=transformer_dim,
+            cond_dim=encoder_feat_dim,
+            mod_dim=camera_embed_dim,
+            drop_path_rate=decoder_drop_path_rate,
         )
         self.upsampler = nn.ConvTranspose2d(transformer_dim, triplane_dim, kernel_size=2, stride=2, padding=0)
         self.synthesizer = TriplaneSynthesizer(
