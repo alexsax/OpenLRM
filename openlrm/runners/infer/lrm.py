@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from accelerate import Accelerator
 
 import torch
 import os
@@ -50,6 +51,7 @@ class LRMInferrer(nn.Module, Inferrer):
         # Says accelerator not initialized, when it is in Inferrer
         nn.Module.__init__(self)
         # Inferrer.__init__(self)
+        accelerator = Accelerator() # Initialize logging for anything with a HF dependency
 
         if cfg is None:
             cfg = parse_configs()

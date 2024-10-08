@@ -63,28 +63,28 @@ def decompose_extrinsic_RT(E: torch.Tensor):
 
 def camera_normalization_objaverse(normed_dist_to_center, poses: torch.Tensor, ret_transform: bool = False):
     assert normed_dist_to_center is not None
-    pivotal_pose = compose_extrinsic_RT(poses[:1])
-    dist_to_center = pivotal_pose[:, :3, 3].norm(dim=-1, keepdim=True).item() \
+    reference_pose = compose_extrinsic_RT(poses[:1])
+    dist_to_center = reference_pose[:, :3, 3].norm(dim=-1, keepdim=True).item() \
         if normed_dist_to_center == 'auto' else normed_dist_to_center
 
-    # compute camera norm (new version)
-    canonical_camera_extrinsics = torch.tensor([[
+    # Compute normalization transform
+    canonical_camera_pose = torch.tensor([[
         [1, 0, 0, 0],
         [0, 0, -1, -dist_to_center],
         [0, 1, 0, 0],
         [0, 0, 0, 1],
     ]], dtype=torch.float32)
-    pivotal_pose_inv = torch.inverse(pivotal_pose)
-    camera_norm_matrix = torch.bmm(canonical_camera_extrinsics, pivotal_pose_inv)
+    reference_pose_inv = torch.inverse(reference_pose)
+    normalization_transform = torch.bmm(canonical_camera_pose, reference_pose_inv)
 
-    # normalize all views
+    # Normalize all camera poses
     poses = compose_extrinsic_RT(poses)
-    poses = torch.bmm(camera_norm_matrix.repeat(poses.shape[0], 1, 1), poses)
-    poses = decompose_extrinsic_RT(poses)
+    normalized_poses = torch.bmm(normalization_transform.repeat(poses.shape[0], 1, 1), poses)
+    normalized_poses = decompose_extrinsic_RT(normalized_poses)
 
     if ret_transform:
-        return poses, camera_norm_matrix.squeeze(dim=0)
-    return poses
+        return normalized_poses, normalization_transform.squeeze(dim=0)
+    return normalized_poses
 
 
 def get_normalized_camera_intrinsics(intrinsics: torch.Tensor):
